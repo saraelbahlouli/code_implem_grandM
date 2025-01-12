@@ -1,0 +1,130 @@
+import numpy as np
+
+def grand_m_method(c, A, b, inequality_types, optimization_type='max', M=1e6):
+    """
+    Implémente la méthode du Grand M pour résoudre des problèmes d'optimisation linéaire.
+
+    Arguments :
+    c : Liste des coefficients de la fonction objectif.
+    A : Matrice des coefficients des contraintes.
+    b : Liste des termes constants des contraintes.
+    inequality_types : Liste des types de contraintes ('<=', '>=', '=').
+    optimization_type : Type d'optimisation ('max' pour maximisation, 'min' pour minimisation).
+    M : Coefficient de pénalité pour les variables artificielles.
+
+    Retourne :
+    Solution optimale et valeur de la fonction objectif.
+    """
+    num_constraints, num_variables = A.shape
+
+    # Ajuster la fonction objectif pour la minimisation si nécessaire
+    if optimization_type == 'min':
+        c = [-coeff for coeff in c]
+
+    # Étape 1 : Mise sous forme standard
+    slack_vars = []
+    artificial_vars = []
+    tableau = []
+
+    for i, ineq in enumerate(inequality_types):
+        row = list(A[i]) + [0] * (num_constraints + num_variables)
+        if ineq == '<=':
+            row[num_variables + len(slack_vars)] = 1  # Variable de slack
+            slack_vars.append(num_variables + len(slack_vars))
+        elif ineq == '>=':
+            row[num_variables + len(slack_vars)] = -1  # Variable d'excès
+            row[num_variables + len(slack_vars) + 1] = 1  # Variable artificielle
+            artificial_vars.append(num_variables + len(slack_vars) + 1)
+        elif ineq == '=':
+            row[num_variables + len(slack_vars)] = 1  # Variable artificielle
+            artificial_vars.append(num_variables + len(slack_vars))
+        row[-1] = b[i]
+        tableau.append(row)
+
+    tableau = np.array(tableau, dtype=float)
+
+    # Étape 2 : Fonction objectif modifiée
+    obj_row = np.zeros(tableau.shape[1])
+    obj_row[:num_variables] = -np.array(c)
+    for var in artificial_vars:
+        obj_row += M * tableau[:, var]
+    tableau = np.vstack((tableau, obj_row))
+
+    # Étape 3 : Résolution par la méthode du Simplexe
+    while np.any(tableau[-1, :-1] < 0):
+        pivot_col = np.argmin(tableau[-1, :-1])
+        ratios = [
+            tableau[i, -1] / tableau[i, pivot_col]
+            if tableau[i, pivot_col] > 0 else np.inf
+            for i in range(len(tableau) - 1)
+        ]
+        pivot_row = np.argmin(ratios)
+
+        if ratios[pivot_row] == np.inf:
+            raise ValueError("Le problème n'a pas de solution optimale.")
+
+        # Pivotage
+        tableau[pivot_row, :] /= tableau[pivot_row, pivot_col]
+        for i in range(len(tableau)):
+            if i != pivot_row:
+                tableau[i, :] -= tableau[i, pivot_col] * tableau[pivot_row, :]
+
+    # Extraction de la solution
+    solution = np.zeros(num_variables)
+    for j in range(num_variables):
+        column = tableau[:-1, j]
+        if np.count_nonzero(column) == 1 and np.sum(column) == 1:
+            solution[j] = tableau[np.where(column == 1)[0][0], -1]
+
+    z = tableau[-1, -1]
+
+    if optimization_type == 'min':
+        z = -z
+
+    return solution, z
+
+if _name_ == "_main_":
+    print("Bienvenue dans le solveur d'optimisation linéaire utilisant la méthode du Grand M!")
+
+    # Définir le type d'optimisation
+    optimization_type = input("Voulez-vous maximiser ou minimiser la fonction objectif ? (max/min) : ").strip().lower()
+
+    # Entrée de la fonction objectif
+    c = list(map(float, input("Entrez les coefficients de la fonction objectif séparés par des espaces: ").split()))
+    num_variables = len(c)
+
+    # Entrée des contraintes
+    num_constraints = int(input("Entrez le nombre de contraintes: "))
+    A = []
+    b = []
+    inequality_types = []
+
+    for i in range(num_constraints):
+        print(f"\nContraintes {i + 1}:")
+        while True:
+            row = list(map(float, input("Entrez les coefficients de la contrainte séparés par des espaces: ").split()))
+            if len(row) != num_variables:
+                print(f"Erreur : Vous devez entrer exactement {num_variables} coefficients.")
+            else:
+                break
+        A.append(row)
+        while True:
+            try:
+                b_value = float(input("Entrez le terme constant de la contrainte: "))
+                b.append(b_value)
+                break
+            except ValueError:
+                print("Erreur : Veuillez entrer un nombre valide.")
+        inequality_types.append(input("Entrez le type de contrainte ('<=', '>=', '='): "))
+
+    # Conversion des listes en tableaux NumPy
+    A = np.array(A, dtype=float)
+    b = np.array(b, dtype=float)
+
+    # Résolution du problème
+    try:
+        solution, z = grand_m_method(c, A, b, inequality_types, optimization_type)
+        print("\nSolution optimale:", solution)
+        print("Valeur optimale de la fonction objectif:", z)
+    except ValueError as e:
+        print("\nErreur:", e)
